@@ -80,7 +80,7 @@ export default async function Settings() {
                 name="ordersOpen"
                 defaultChecked={s.ordersOpen}
               />
-              Приемай нови поръчки
+              {s.localBrochureOrdering ? "Приемай локални тестови поръчки" : "Приемай нови поръчки"}
             </label>
             <label className="adm-check">
               <input

@@ -6,23 +6,26 @@ import { PageEditor } from "@/admin/page-editor";
 import { PhotoEditor } from "@/admin/photo-editor";
 import { PageHeading, Panel } from "@/admin/presentation";
 import { Field, CommandForm, Submit } from "@/admin/widgets";
+import { CarouselEditor } from "@/admin/carousel-editor";
+import { carouselEditorData } from "@/ui/shop/carousel-data";
 export default async function Content() {
   await requireStaff(["owner"]);
-  const [pages, categories, products, settings] = await Promise.all([
+  const [pages, categories, products, settings, carousel] = await Promise.all([
     query("select * from pages"),
     query("select * from categories order by sort_order,name"),
     query("select id,name from products where status=$1 order by name", [
       "published",
     ]),
     getSettings(),
+    carouselEditorData(),
   ]);
   return (
     <>
-      <PageHeading
-        title="Съдържание"
-        subtitle="Редактирай страниците и подредбата на магазина."
-      />
-      <Panel title="Страници и начална витрина">
+      <PageHeading title="Съдържание" />
+      <Panel title="Карусел на началната страница" id="karusel">
+        <CarouselEditor {...carousel} />
+      </Panel>
+      <Panel title="Страници и подбрани продукти">
         {Object.entries(pageTitles).map(([slug, title]) => {
           const p = pages.find((r) => r.slug === slug);
           const initial =

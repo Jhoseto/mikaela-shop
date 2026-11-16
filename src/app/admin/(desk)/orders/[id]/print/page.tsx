@@ -34,7 +34,7 @@ export default async function PrintOrder({
           " № " +
           order.number
         }
-        subtitle={dateTime(order.created_at)}
+        subtitle={[dateTime(order.created_at), order.test_only ? "Тестова поръчка · Без реална доставка или плащане" : ""].filter(Boolean).join(" · ")}
         action={<PrintButton />}
       />
       <Panel>

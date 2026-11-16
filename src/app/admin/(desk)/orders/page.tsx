@@ -17,7 +17,7 @@ export default async function Orders({
   const page = Math.max(1, Math.min(10000, Number(d.page) || 1));
   const [rows, stats] = await Promise.all([
     query(
-      `select id, number,status,payment_status,customer,delivery_snapshot,total_cents,count(*) over() total_count from orders where ($1='' or status=$1) and ($2='' or number::text=$2 or position(lower($2) in lower(customer->>'name'))>0 or position($2 in customer->>'phone')>0) and ($3<>'1' or (delivery_snapshot->>'day')::date=(now() at time zone 'Europe/Sofia')::date) order by created_at desc limit 40 offset $4`,
+      `select id, number,test_only,status,payment_status,customer,delivery_snapshot,total_cents,count(*) over() total_count from orders where ($1='' or status=$1) and ($2='' or number::text=$2 or position(lower($2) in lower(customer->>'name'))>0 or position($2 in customer->>'phone')>0) and ($3<>'1' or (delivery_snapshot->>'day')::date=(now() at time zone 'Europe/Sofia')::date) order by created_at desc limit 40 offset $4`,
       [
         d.status || "",
         String(d.q || "").slice(0, 120),
@@ -86,6 +86,7 @@ export default async function Orders({
                   <tr key={o.id}>
                     <td>
                       <Link href={"/admin/orders/" + o.id}>№ {o.number}</Link>
+                      {o.test_only && <small className="block">Тестова поръчка</small>}
                     </td>
                     <td>{o.customer.name}</td>
                     <td>{interval(o)}</td>

@@ -45,6 +45,7 @@ const descriptions: Record<string, string> = {
   "delivery.exception": "Празнично изключение",
   "category.save": "Редакция на категория",
   "page.save": "Редакция на страница",
+  "page.carousel": "Редакция на началния карусел",
   "offer.save": "Редакция на оферта",
   "synonym.save": "Синоними",
   "staff.create": "Нов служебен профил",

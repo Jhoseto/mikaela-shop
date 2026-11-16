@@ -28,6 +28,16 @@ export function PageEditor({
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="revision" value={revision} />
       <div className="adm-fields">
+        {slug === "home" && (
+          <p className="adm-caption">
+            Тук редактираш първата автоматична оферта и секцията „Подбрано от
+            Микаела“. Отделните слайдове се управляват от{" "}
+            <a className="adm-link" href="#karusel">
+              карусела
+            </a>
+            .
+          </p>
+        )}
         <Field title="Заглавие">
           <input
             name="title"

@@ -16,7 +16,7 @@ export default async function Dashboard() {
       `select (select count(*) from orders where status='preparing') preparing,(select count(*) from orders where status='waiting') waiting,(select count(*) from orders o join delivery_slots s on s.id=o.slot_id where s.day=(now() at time zone 'Europe/Sofia')::date and o.status<>'cancelled') today,(select count(*) from brochure_items i join brochure_campaigns c on c.current_batch=i.batch_id where status='review') review,(select count(*) from notification_jobs where last_error is not null and status<>'sent') failed,(select count(*) from brochure_schedule where last_error is not null) sync_error,(select count(distinct p.id) from variants v join products p on p.id=v.product_id where p.status='published' and ${priceNeedsReview}) missing_price`,
     ),
     query(
-      "select id,number,status,total_cents,created_at from orders order by created_at desc limit 8",
+      "select id,number,status,total_cents,created_at,test_only from orders order by created_at desc limit 8",
     ),
     getSettings(),
   ]);
@@ -62,7 +62,7 @@ export default async function Dashboard() {
                   № {o.number}
                 </Link>{" "}
                 · {dateTime(o.created_at)} · {label(o.status)} ·{" "}
-                {money(o.total_cents)}
+                {money(o.total_cents)}{o.test_only && " · Тестова поръчка"}
               </li>
             ))}
           </ul>
@@ -72,7 +72,7 @@ export default async function Dashboard() {
       </Panel>
       <Panel title="Състояние на магазина">
         <p>
-          Нови поръчки · {site.ordersOpen ? "приемат се" : "временно спрени"}
+          {site.localBrochureOrdering ? "Локални тестови поръчки" : "Нови поръчки"} · {site.ordersOpen ? "приемат се" : "временно спрени"}
         </p>
         <p>
           <Link href="/admin/notifications" className="adm-link">

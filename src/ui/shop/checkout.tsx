@@ -16,9 +16,11 @@ import { Quantity } from "./quantity";
 import { ProductImage } from "./media";
 import {
   amount,
+  basketVariantLabel,
   money,
   productHref,
   shortDate,
+  type BasketLine,
   type ShopSettings,
   type ShopZone,
 } from "./model";
@@ -31,6 +33,7 @@ type DeliveryRow = {
   reserved?: number;
 };
 type Quote = {
+  testOnly?: boolean;
   items: {
     variantId: string;
     productName: string;
@@ -51,6 +54,20 @@ type Quote = {
   termsVersion: number;
 };
 const pendingKey = "mikaela.checkout.pending.v1";
+function VariantChoice({ line, onChange }: { line: BasketLine; onChange: (value: string) => void }) {
+  return (
+    <label className="field mt-3">
+      Желан вариант за {line.title}
+      <input
+        required
+        maxLength={120}
+        value={line.requestedVariant ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Вкус, вид или разфасовка"
+      />
+    </label>
+  );
+}
 function EmptyCart() {
   return (
     <div className="empty-state">
@@ -86,7 +103,7 @@ function QuoteTotals({
         </div>
       )}
       <div className="total-line">
-        <dt>{quote ? "Общо" : "Продукти, ориентировъчно"}</dt>
+        <dt>{quote ? "Общо" : "Общо без доставка"}</dt>
         <dd>{money(quote?.total ?? estimateTotal)}</dd>
       </div>
     </dl>
@@ -123,11 +140,18 @@ export function OrderFlow({
     quantity: l.quantity,
     note: l.note,
     substitution: l.substitution,
+    ...(l.requiresVariantChoice && { requestedVariant: l.requestedVariant?.trim() || "" }),
     weightTolerance:
       l.unit === "kg" && consentWeight
         ? settings.weightTolerancePercent || 0
         : 0,
   }));
+  const hasUnspecifiedVariant = cart.lines.some((line) => line.requiresVariantChoice && !line.requestedVariant?.trim());
+  const localOffers = settings.promoBasis === "order"
+    ? []
+    : cart.lines.filter((line) => line.localBrochureOrder && line.offer).map((line) => line.offer!);
+  const firstDay = localOffers.map((offer) => offer.starts || "").sort().at(-1) || "";
+  const lastDay = localOffers.map((offer) => offer.ends).sort()[0] || "";
   const calculation = JSON.stringify({
     zoneId: cart.zone,
     slotId: slot,
@@ -160,13 +184,16 @@ export function OrderFlow({
         return r.json();
       })
       .then((d) => {
-        setZones(parseZones(d.zones));
+        const activeZones = parseZones(d.zones);
+        setZones(activeZones);
+        if (settings.localBrochureOrdering && activeZones.length === 1 && cart.zone !== activeZones[0].id) {
+          cart.setZone(activeZones[0].id);
+        }
         const list: DeliveryRow[] = Array.isArray(d.slots)
           ? d.slots.filter(
               (s: DeliveryRow) =>
-                s.capacity == null ||
-                s.reserved == null ||
-                s.reserved < s.capacity,
+                (!firstDay || s.day >= firstDay) && (!lastDay || s.day <= lastDay) &&
+                (s.capacity == null || s.reserved == null || s.reserved < s.capacity),
             )
           : [];
         setSlots(list);
@@ -183,13 +210,13 @@ export function OrderFlow({
         if (!ac.signal.aborted) setDeliveryBusy(false);
       });
     return () => ac.abort();
-  }, [cart.zone, deliveryRetry]);
+  }, [cart.zone, deliveryRetry, firstDay, lastDay, settings.localBrochureOrdering]);
   useEffect(() => {
     setQuote(null);
     setTerms(false);
     setError("");
     setMessage("");
-    if (!cart.zone || !slot || !bodyItems.length) {
+    if (!cart.zone || !slot || !bodyItems.length || hasUnspecifiedVariant) {
       setLoading(false);
       return;
     }
@@ -204,18 +231,20 @@ export function OrderFlow({
     })
       .then(async (r) => {
         const d = await r.json();
-        if (!r.ok) throw new Error(d.error || "Неуспешна проверка.");
+        if (!r.ok) throw new Error(d.error || "Общата сума не може да се изчисли. Опитай отново.");
         return d;
       })
       .then((q) => setQuote(q))
       .catch((e) => {
-        if (!ac.signal.aborted) setError(e.message);
+        if (!ac.signal.aborted) setError(e instanceof TypeError || e instanceof SyntaxError
+          ? "Не успяхме да заредим цените. Опитай отново."
+          : e.message);
       })
       .finally(() => {
         if (!ac.signal.aborted) setLoading(false);
       });
     return () => ac.abort();
-  }, [calculation, cart.zone, slot, cart.lines.length]);
+  }, [calculation, cart.zone, slot, cart.lines.length, hasUnspecifiedVariant]);
   const selectSlot = (value: string) => {
     setSlot(value);
     try {
@@ -284,7 +313,7 @@ export function OrderFlow({
     } catch {
       setPending(true);
       setError(
-        "Връзката прекъсна. Провери резултата със същата заявка, преди да продължиш.",
+        "Връзката прекъсна. Провери дали поръчката е получена.",
       );
     } finally {
       inFlight.current = false;
@@ -293,7 +322,7 @@ export function OrderFlow({
   }
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!quote || !terms || submitting || pending) return;
+    if (!quote || !terms || submitting || pending || hasUnspecifiedVariant) return;
     const f = new FormData(e.currentTarget),
       customer = Object.fromEntries(
         [
@@ -324,7 +353,7 @@ export function OrderFlow({
       const oldPrice = cart.lineTotals[line.variantId];
       const oldOffer = line.offer?.label || "";
       const activeOffer = item.offer
-        ? item.offer.terms || "Промоционална цена"
+        ? item.offer.terms || (line.localBrochureOrder ? "Цена от брошурата" : "Промоционална цена")
         : "";
       const changes = [];
       if (oldPrice !== item.lineCents)
@@ -360,11 +389,7 @@ export function OrderFlow({
       </div>
       {pending && checkout ? (
         <div className="surface">
-          <h2>Проверка на подадена поръчка</h2>
-          <p>
-            Потърси потвърждение за последното изпращане. Повторната проверка
-            използва същия номер на заявката.
-          </p>
+          <h2>Очаква се потвърждение</h2>
           {error && <p role="alert">{error}</p>}
           <button
             className="shop-button"
@@ -391,7 +416,7 @@ export function OrderFlow({
                   const offer = item
                     ? item.offer
                       ? {
-                          label: item.offer.terms || "Промоционална цена",
+                          label: item.offer.terms || (l.localBrochureOrder ? "Цена от брошурата" : "Промоционална цена"),
                           ends: item.offer.ends,
                         }
                       : null
@@ -405,9 +430,7 @@ export function OrderFlow({
                             {l.title}
                           </Link>
                           <small>
-                            {[l.variantName, l.pack]
-                              .filter(Boolean)
-                              .join(" · ")}
+                            {basketVariantLabel(l)}
                           </small>
                           <small>
                             {money(item?.unitCents ?? l.price)} /{" "}
@@ -442,6 +465,9 @@ export function OrderFlow({
                           {offer.label} · до {shortDate(offer.ends)}
                         </p>
                       )}
+                      {l.requiresVariantChoice && (
+                        <VariantChoice line={l} onChange={(requestedVariant) => cart.edit(l.variantId, { requestedVariant })} />
+                      )}
                       <details>
                         <summary>Предпочитание при липса и бележка</summary>
                         <label className="field">
@@ -475,6 +501,14 @@ export function OrderFlow({
                     </article>
                   );
                 })}
+              </section>
+            )}
+            {checkout && cart.lines.some((line) => line.requiresVariantChoice) && (
+              <section className="surface">
+                <h2>Варианти на продуктите</h2>
+                {cart.lines.filter((line) => line.requiresVariantChoice).map((line) => (
+                  <VariantChoice key={line.variantId} line={line} onChange={(requestedVariant) => cart.edit(line.variantId, { requestedVariant })} />
+                ))}
               </section>
             )}
             <section className="surface">
@@ -519,9 +553,9 @@ export function OrderFlow({
               </div>
               {chosenZone && (
                 <p className="fine muted">
-                  Минимална поръчка {money(chosenZone.minimum)}. Доставка{" "}
-                  {money(chosenZone.fee)}.
-                  {chosenZone.freeFrom != null &&
+                  {chosenZone.minimum > 0 && "Минимална поръчка " + money(chosenZone.minimum) + ". "}
+                  {chosenZone.fee ? "Доставка " + money(chosenZone.fee) + "." : "Безплатна доставка."}
+                  {chosenZone.fee > 0 && chosenZone.freeFrom != null &&
                     " Безплатна от " + money(chosenZone.freeFrom) + "."}
                 </p>
               )}
@@ -547,16 +581,12 @@ export function OrderFlow({
                 )}
               {!deliveryBusy && !zones.length && !deliveryError && (
                 <p className="shop-notice">
-                  Магазинът все още подготвя районите за доставка.
+                  В момента няма обслужвани райони.
                 </p>
               )}
-              <p className="fine">
-                Промоциите се определят според{" "}
-                {settings.promoBasis === "order"
-                  ? "датата на поръчване"
-                  : "избрания ден за доставка"}
-                .
-              </p>
+              {cart.lines.some((line) => line.offer) && settings.promoBasis !== "order" && (
+                <p className="fine">Промоционалните цени важат за избрания ден на доставка.</p>
+              )}
             </section>
             {checkout && (
               <>
@@ -621,10 +651,9 @@ export function OrderFlow({
                       <textarea name="note" maxLength={700} rows={2} />
                     </label>
                   </div>
-                  <p className="fine">
-                    Изпращаме потвърждението по имейл. При поръчка без имейл го
-                    получаваш на хартия при доставката.
-                  </p>
+                  {!settings.localBrochureOrdering && (
+                    <p className="fine">Ще получиш потвърждение по имейл или на хартия при доставката.</p>
+                  )}
                 </section>
                 <section className="surface">
                   <h2>Начин на плащане</h2>
@@ -676,7 +705,7 @@ export function OrderFlow({
                       <span>
                         {l.title}
                         <small>
-                          {[l.variantName, l.pack].filter(Boolean).join(" · ")}{" "}
+                          {basketVariantLabel(l)}{" "}
                           · {amount(l.quantity)}{" "}
                           {l.unit === "kg" ? "кг" : "бр."}
                           {i?.terms && " · " + i.terms}
@@ -689,6 +718,14 @@ export function OrderFlow({
               </div>
             )}
             <QuoteTotals quote={quote} estimateTotal={cart.total} />
+            {hasUnspecifiedVariant && (
+              <p className="shop-notice">Посочи желаните варианти, за да продължиш.</p>
+            )}
+            {checkout && settings.localBrochureOrdering && (
+              <p className="shop-notice">
+                Пробна поръчка без доставка и плащане.
+              </p>
+            )}
             {!!changedRows.length && (
               <div className="shop-notice" role="status">
                 <b>Промени за избрания ден</b>
@@ -701,7 +738,7 @@ export function OrderFlow({
             )}
             {isEstimated && (
               <p className="fine">
-                Тегловите продукти са с ориентировъчна сума до претегляне.
+                Крайната сума за продуктите на килограм зависи от теглото.
               </p>
             )}
             {loading && <p role="status">Проверяваме цените и интервала…</p>}
@@ -745,12 +782,13 @@ export function OrderFlow({
                     !quote ||
                     loading ||
                     submitting ||
+                    hasUnspecifiedVariant ||
                     !terms
                   }
                 >
                   {submitting
                     ? "Изпращане…"
-                    : "Поръчвам с плащане при доставка"}
+                    : settings.localBrochureOrdering ? "Потвърди поръчката" : "Поръчвам с плащане при доставка"}
                 </button>
               </>
             ) : (

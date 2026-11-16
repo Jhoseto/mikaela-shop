@@ -73,7 +73,7 @@ export default async function OrderPage({
     <>
       <PageHeading
         title={"Поръчка № " + o.number}
-        subtitle={dateTime(o.created_at)}
+        subtitle={[dateTime(o.created_at), o.test_only ? "Тестова поръчка · Без реална доставка" : ""].filter(Boolean).join(" · ")}
         action={
           <div className="adm-inline">
             <a

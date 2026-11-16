@@ -12,17 +12,17 @@ export function json(value: unknown, status = 200) {
 export async function body(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(process.env.APP_URL || request.url).origin)
-    throw new ShopError("Непозволен произход на заявката.", 403);
+    throw new ShopError("Презареди страницата на магазина и опитай отново.", 403);
   if (!request.headers.get("content-type")?.includes("application/json"))
-    throw new ShopError("Очаква се JSON.", 415);
+    throw new ShopError("Формулярът не може да се изпрати. Презареди страницата.", 415);
   if (Number(request.headers.get("content-length")) > 100000)
-    throw new ShopError("Прекалено голяма заявка.", 413);
+    throw new ShopError("Въведените данни са прекалено дълги.", 413);
   const raw = await request.text();
-  if (raw.length > 100000) throw new ShopError("Прекалено голяма заявка.", 413);
+  if (raw.length > 100000) throw new ShopError("Въведените данни са прекалено дълги.", 413);
   try {
     return JSON.parse(raw);
   } catch {
-    throw new ShopError("Невалидна заявка.");
+    throw new ShopError("Формулярът не може да се изпрати. Презареди страницата.");
   }
 }
 export async function endpoint(fn: () => Promise<unknown>) {
@@ -34,7 +34,7 @@ export async function endpoint(fn: () => Promise<unknown>) {
     if (e instanceof ZodError)
       return json(
         {
-          error: "Проверете въведените данни.",
+          error: "Провери въведените данни.",
           fields: e.issues.map((i) => i.path.join(".")),
         },
         400,
@@ -44,7 +44,7 @@ export async function endpoint(fn: () => Promise<unknown>) {
       e instanceof Error ? e.name : "error",
     );
     return json(
-      { error: "Временно не успяхме да обработим заявката. Опитайте отново." },
+      { error: "Не успяхме да завършим действието. Опитай отново след малко." },
       500,
     );
   }

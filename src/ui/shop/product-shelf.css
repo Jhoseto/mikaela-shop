@@ -1,0 +1,162 @@
+.shop {
+  --canvas: #f9f8f1;
+  --ink: #173c2a;
+  --line: #d9dfd1;
+}
+.shop .shop-width {
+  width: min(1416px, calc(100% - clamp(32px, 7vw, 112px)));
+}
+.shelf-card {
+  --shelf-paper: #eff3e4;
+  --shelf-ink: #49602c;
+}
+.shelf-card[data-category="mlechni-produkti"] { --shelf-paper: #ebf2ef; --shelf-ink: #255b4b; }
+.shelf-card[data-category="plodove-zelenchutsi"] { --shelf-paper: #f4f2df; --shelf-ink: #526119; }
+.shelf-card[data-category="sladki-soleni"] { --shelf-paper: #f7ebe4; --shelf-ink: #793d31; }
+.shelf-card[data-category="napitki"] { --shelf-paper: #f7efe1; --shelf-ink: #80531a; }
+.shelf-card[data-category="meso-kolbasi"] { --shelf-paper: #f4e9e6; --shelf-ink: #7b422f; }
+.shelf-card[data-category="hlyab-testeni"] { --shelf-paper: #f7f0e1; --shelf-ink: #74572a; }
+.shelf-card[data-category="osnovni-hrani"] { --shelf-paper: #f3eddf; --shelf-ink: #6b5128; }
+.shelf-card[data-category="riba-i-morski-darove"] { --shelf-paper: #e9f1f3; --shelf-ink: #315a66; }
+.shelf-card[data-category="dom-grizha"] { --shelf-paper: #efedf6; --shelf-ink: #615278; }
+.shop .shelf-card {
+  position: relative;
+  border: 1px solid #dbe0d3;
+  border-radius: 20px;
+  box-shadow: 0 2px 3px #18352305;
+  transition: transform .32s cubic-bezier(.2,.8,.2,1), border-color .25s, box-shadow .3s;
+}
+.shelf-card .product-image {
+  isolation: isolate;
+  aspect-ratio: 1.52;
+  margin: 8px 8px 0;
+  border-radius: 13px;
+  background: radial-gradient(ellipse at 50% 30%, #fff9 1%, transparent 73%), var(--shelf-paper);
+}
+.shelf-card .product-image::before {
+  content: "";
+  position: absolute;
+  inset: 13% 15%;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--shelf-ink) 10%, transparent);
+  transform: rotate(-12deg);
+  transition: transform .48s ease;
+}
+.shelf-card .product-image > img {
+  mix-blend-mode: multiply;
+  padding: 22px 22px 15px;
+}
+.shelf-card .product-promo {
+  z-index: 1;
+  top: 9px;
+  left: 9px;
+  background: #fffff0;
+  color: #324e30;
+  border: 1px solid #55684c25;
+  border-radius: 20px;
+  font-weight: 700;
+  line-height: 1.05;
+  font-size: .70rem;
+  padding: 5px 8px;
+}
+.shelf-card .product-promo.pack-deal {
+  background: #ffbe47;
+  border: 0;
+  color: #322b16;
+  padding: 7px 12px;
+  border-radius: 5px 12px 5px 12px;
+  transform: rotate(-4deg);
+  font: 850 .9rem/1 var(--font-display);
+}
+.shelf-card .product-copy {
+  padding: 15px clamp(12px, 1.2vw, 20px) 16px;
+  gap: 6px;
+}
+.shelf-meta { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.shelf-card .product-category {
+  color: var(--shelf-ink);
+  font-weight: 720;
+  font-size: .69rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.shelf-age { font: 700 .70rem/1 var(--font-display); border: 1px solid #aa9770; border-radius: 30px; padding: 3px 5px; }
+.shelf-card .product-copy h3 {
+  font-family: var(--font-display);
+  font-size: clamp(.98rem, 1.24vw, 1.22rem);
+  font-weight: 715;
+  line-height: 1.2;
+  letter-spacing: -.027em;
+  text-wrap: pretty;
+}
+.shelf-card h3 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.shelf-card h3 a {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.shelf-card .product-pack { color: #5b645a; }
+.shelf-card .offer-condition { color: #834320; font-size: .79rem; }
+.shelf-buy {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+.shelf-buy::before { content: ""; width: 100%; height: 1px; background: #e3e6db; margin-bottom: 3px; }
+.shelf-buy .price-row { margin: 0; padding: 0; gap: 2px; }
+.shelf-buy .price-row strong { color: #143825; font: 830 clamp(1.38rem, 2vw, 1.87rem)/1.03 var(--font-display); letter-spacing: -.06em; }
+.shelf-buy .price-row small { font-size: .77rem; letter-spacing: 0; }
+.shelf-buy .product-action { padding: 0; min-height: 38px; gap: 5px; align-items: flex-end; flex-direction: column; }
+.shop .shelf-buy .add-button {
+  background: #184833;
+  color: #fff;
+  border-radius: 999px;
+  font-weight: 675;
+  min-height: 38px;
+  padding: 7px 13px 7px 10px;
+}
+.shop .shelf-buy .add-button:hover { background: #235b3e; }
+.shelf-card .quantity-picker { box-shadow: inset 0 0 0 1px #b5c8ae; background: #f2f6e9; }
+.shelf-card .stock { font-size: .71rem; }
+@media (hover: hover) {
+  .shop .shelf-card:hover, .shop .shelf-card:focus-within {
+    border-color: #9dac95;
+    box-shadow: 0 14px 30px -16px #27432648;
+    transform: translateY(-3px);
+  }
+  .shelf-card:hover .product-image::before { transform: rotate(2deg) scale(1.05); }
+}
+@media (min-width: 1100px) {
+  .shop .products-grid { gap: 18px; }
+}
+@media (max-width: 640px) {
+  .shop .shop-width { width: calc(100% - 24px); }
+  .shop .shelf-card { border-radius: 15px; }
+  .shelf-card .product-image { aspect-ratio: 1.18; margin: 5px 5px 0; border-radius: 10px; }
+  .shelf-card .product-image > img { padding: 19px 9px 8px; }
+  .shelf-card .product-copy { padding: 11px 10px 12px; gap: 5px; }
+  .shelf-card .product-category { font-size: .60rem; letter-spacing: .026em; }
+  .shelf-card .product-copy h3 { font-size: .96rem; }
+  .shelf-card .product-promo { top: 5px; left: 5px; font-size: .62rem; }
+  .shelf-card .product-promo.pack-deal { padding: 5px 9px; font-size: .75rem; }
+  .shelf-buy { gap: 7px; padding-top: 5px; }
+  .shelf-buy .product-action { width: 100%; flex-direction: row; align-items: center; }
+  .shelf-buy .add-wrap, .shelf-buy .add-wrap .add-button { width: 100%; }
+  .shop .shelf-buy .add-button { justify-content: center; min-height: 43px; }
+  .shelf-buy .quantity-picker { width: 100%; }
+  .shelf-card .offer-condition { font-size: .73rem; }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .shelf-card .product-copy { animation: shelf-arrives linear both; animation-timeline: view(); animation-range: entry 0% entry 85%; }
+    @keyframes shelf-arrives { from { transform: translateY(9px); } to { transform: none; } }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shop .shelf-card, .shelf-card .product-image::before { transition: none; transform: none; }
+}

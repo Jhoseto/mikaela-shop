@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const s = await shopSettings(),
     base = origin(s);
-  if (s.demo || !base) return { rules: { userAgent: "*", disallow: "/" } };
+  if (s.demo || s.localBrochureOrdering || !base) return { rules: { userAgent: "*", disallow: "/" } };
   return {
     rules: {
       userAgent: "*",

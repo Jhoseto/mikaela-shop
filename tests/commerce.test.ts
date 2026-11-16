@@ -476,7 +476,7 @@ test("PostgreSQL: цени, последно място, идемпотентн�
       assert.deepEqual(slotState, { reserved: 3 - i, capacity: 1 });
       const available = (await delivery(zone.id)).slots;
       assert.equal(available.some((s) => s.id === revised.id), false);
-      await assert.rejects(book(), /Интервалът е запълнен/);
+      await assert.rejects(book(), /интервал за доставка вече не е свободен/i);
       await assert.rejects(
         query("UPDATE delivery_slots SET reserved=reserved+1 WHERE id=$1", [revised.id]),
         { code: "23514" },
@@ -486,7 +486,7 @@ test("PostgreSQL: цени, последно място, идемпотентн�
     const reopened = (await delivery(zone.id)).slots.find((s) => s.id === revised.id);
     assert.equal(reopened?.remaining, 1);
     await book();
-    await assert.rejects(book(), /Интервалът е запълнен/);
+    await assert.rejects(book(), /интервал за доставка вече не е свободен/i);
     evidence.push(
       "Намаляване на лимита от 3 на 1 запазва приетите поръчки и отваря единствено наистина свободно място.",
     );

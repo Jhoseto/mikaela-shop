@@ -6,7 +6,7 @@ type Client=PoolClient
 const categories:Record<string,string>={
   "Млечни продукти":"mlechni-produkti","Плодове и зеленчуци":"plodove-zelenchutsi","Месо и колбаси":"meso-kolbasi",
   "Хляб и тестени изделия":"hlyab-testeni","Сладки и солени изделия":"sladki-soleni","Напитки":"napitki",
-  "Основни храни":"osnovni-hrani","Дом и грижа":"dom-grizha"
+  "Основни храни":"osnovni-hrani","Дом и грижа":"dom-grizha","Риба и морски дарове":"riba-i-morski-darove"
 }
 async function sourceValues(c:Client,a:Article) {
   const category=a.category && categories[a.category] ? (await c.query(`insert into categories(slug,name) values($1,$2)
@@ -62,7 +62,10 @@ async function updateFromSource(c:Client,p:any,a:Article) {
   if(p.origin!=="brochure" || p.source_data?.source_key!==a.key)return
   const data=await sourceValues(c,a)
   const preserve=new Set(p.local_settings?.overrides??[])
-  await c.query(`update products set source_data=$2,name=$3,brand=$4,category_id=$5,description=$6,updated_at=now() where id=$1`,
+  if(p.status==="draft" && p.pack===p.source_data.pack && p.pack!==a.pack)
+    await c.query("update variants set pack=$2 where id=$1 and pack=$3",[p.variant_id,a.pack,p.pack])
+  await c.query(`update products set food=case when food=source_data->'food' then $2::jsonb->'food' else food end,
+    source_data=$2,name=$3,brand=$4,category_id=$5,description=$6,updated_at=now() where id=$1`,
     [p.id,data,preserve.has("name")?p.name:data.name,preserve.has("brand")?p.brand:data.brand,
       preserve.has("category_id")?p.category_id:data.category_id,preserve.has("description")?p.description:data.description])
   await upsertPhoto(c,p,data.image_url)

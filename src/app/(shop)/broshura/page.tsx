@@ -23,10 +23,6 @@ export default async function BrochurePage() {
               <h2>
                 {shortDate(b.starts)} – {shortDate(b.ends, true)}
               </h2>
-              <p>
-                Разгледай националната брошура. В каталога на „Микаела“ ще
-                намериш предложенията, потвърдени за нашия магазин.
-              </p>
               <div className="button-row">
                 <a
                   className="shop-button"
@@ -34,10 +30,10 @@ export default async function BrochurePage() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <FileText size={17} /> Отвори PDF
+                  <FileText size={17} /> Разгърни брошурата
                 </a>
                 <Link className="shop-outline" href="/promocii">
-                  Към промоциите <ArrowRight size={15} />
+                  Разгледай продуктите <ArrowRight size={15} />
                 </Link>
               </div>
             </div>
@@ -49,7 +45,7 @@ export default async function BrochurePage() {
       ) : (
         <div className="empty-state">
           <BookOpen />
-          <h2>Очакваме актуалната брошура</h2>
+          <h2>Няма актуална брошура</h2>
           <Link className="text-link" href="/produkti">
             Разгледай каталога <ArrowRight size={17} />
           </Link>

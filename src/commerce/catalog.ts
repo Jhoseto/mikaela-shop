@@ -1,6 +1,16 @@
 import { query } from "@/db";
+import type { PoolClient } from "pg";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import {
+  currentBrochureListings,
+  datedBrochureListings,
+} from "@/importer/public-listings";
+import {
+  activeLocalBrochure,
+  localBrochureCampaign,
+  localTermsSlug,
+} from "./local-brochure";
 export const siteDefaults = {
   name: "Моят Магазин Микаела",
   city: "",
@@ -13,6 +23,8 @@ export const siteDefaults = {
   company: "",
   companyId: "",
   ordersOpen: false,
+  localOrdersOpen: false,
+  localBrochureOrdering: false,
   cardEnabled: false,
   demo: false,
   baseUrl: "",
@@ -37,21 +49,31 @@ export const siteDefaults = {
   contactWaitMinutes: 15,
 };
 export async function getSettings(): Promise<typeof siteDefaults> {
+  const active = await activeLocalBrochure();
+  const termsSlug = active ? localTermsSlug : "obshti-usloviya";
   const result = await db.execute(
-    sql`SELECT value,(SELECT version FROM pages WHERE slug='obshti-usloviya' AND published IS NOT NULL) AS legal_version FROM settings WHERE key='site'`,
+    sql`SELECT value,(SELECT version FROM pages WHERE slug=${termsSlug} AND published IS NOT NULL) AS legal_version FROM settings WHERE key='site'`,
   );
   const r = result.rows[0] as any;
   return {
     ...siteDefaults,
     ...r?.value,
+    ordersOpen: active
+      ? r?.value?.localOrdersOpen === true
+      : r?.value?.ordersOpen === true,
+    localBrochureOrdering: !!active,
     termsVersion: Number(r?.legal_version || 0),
     hero: { ...siteDefaults.hero, ...r?.value?.hero },
   };
 }
 export async function getPage(slug: string) {
+  const pageSlug =
+    slug === "obshti-usloviya" && (await activeLocalBrochure())
+      ? localTermsSlug
+      : slug;
   const [r] = await query(
     "SELECT published,version FROM pages WHERE slug=$1 AND published IS NOT NULL",
-    [slug],
+    [pageSlug],
   );
   return r ? { ...r.published, version: r.version } : null;
 }
@@ -119,6 +141,9 @@ export type OfferView = {
   ends: string;
 };
 export type VariantView = {
+  listingOnly: boolean;
+  localBrochureOrder: boolean;
+  requiresVariantChoice: boolean;
   id: string;
   name: string;
   pack: string;
@@ -133,6 +158,7 @@ export type VariantView = {
   food: Record<string, any>;
 };
 export type ProductView = {
+  listingOnly: boolean;
   id: string;
   slug: string;
   name: string;
@@ -205,26 +231,82 @@ type Options = {
   limit?: number;
   offset?: number;
   slug?: string;
+  ids?: string[];
 };
-export async function getCatalog(opts: Options = {}): Promise<ProductView[]> {
+const publishedCatalogProduct = `p.status='published' AND (
+  coalesce((p.food->>'ageRestricted')::boolean,false)=false
+  OR (SELECT value->>'ageEnabled' FROM settings WHERE key='site')='true')`;
+
+// Query and product tokens use the same Bulgarian transliteration as the catalog index.
+const searchWords = (expression: string) =>
+  `trim(regexp_replace(shop_search_key(${expression}), '[^[:alnum:]]+', ' ', 'g'))`;
+
+export async function getCatalog(opts: Options = {}, client?: PoolClient): Promise<ProductView[]> {
   const day = opts.date || today();
   const q = (opts.q || "").trim().slice(0, 100);
-  const rows = await query(
-    `SELECT p.id,p.slug,p.name,p.brand,p.description,p.food,p.available,p.category_id,p.local_settings->'seo' seo,coalesce((p.food->>'ageRestricted')::boolean,false) age_restricted,c.name category_name,c.slug category_slug,
- COALESCE((SELECT jsonb_agg(i.url ORDER BY (i.source='local') DESC,i.sort_order,i.id) FROM images i WHERE i.product_id=p.id),'[]') images,
- (SELECT jsonb_agg(to_jsonb(v)||jsonb_build_object('offer',active.offer) ORDER BY v.name,v.id) FROM variants v ${offerJoin} WHERE v.product_id=p.id) variants,
- greatest(similarity(shop_search_key(p.name),shop_search_key($2)),word_similarity(shop_search_key($2),shop_search_key(p.brand||' '||p.name))) relevance
- FROM products p JOIN categories c ON c.id=p.category_id WHERE p.status='published'
- AND (COALESCE((p.food->>'ageRestricted')::boolean,false)=false OR (SELECT value->>'ageEnabled' FROM settings WHERE key='site')='true')
- AND ($3='' OR c.slug=$3) AND ($4='' OR p.slug=$4) AND ($2='' OR position(shop_search_key($2) IN shop_search_key(p.name||' '||p.brand||' '||c.name))>0 OR word_similarity(shop_search_key($2),shop_search_key(p.brand||' '||p.name))>0.40 OR EXISTS(SELECT 1 FROM synonyms s,unnest(s.alternatives||ARRAY[s.term]) AS hit,unnest(s.alternatives||ARRAY[s.term]) AS alt WHERE shop_search_key(hit)=shop_search_key($2) AND position(shop_search_key(alt) IN shop_search_key(p.name||' '||p.brand||' '||c.name))>0))
- ORDER BY relevance DESC,p.name,p.id`,
-    [day, q, opts.category || "", opts.slug || ""],
-  );
+  const statement = `WITH brochure_listings AS (${datedBrochureListings("$5")}), catalog AS (
+      SELECT p.id,p.slug,p.name,p.brand,p.description,p.food,p.available,c.id::text AS category_id,
+        p.local_settings->'seo' AS seo,coalesce((p.food->>'ageRestricted')::boolean,false) AS age_restricted,
+        c.name AS category_name,c.slug AS category_slug,false AS listing_only,NULL::int AS page,NULL::int AS ordinal,
+        coalesce((SELECT jsonb_agg(i.url ORDER BY (i.source='local') DESC,i.sort_order,i.id) FROM images i WHERE i.product_id=p.id),'[]') AS images,
+        (SELECT jsonb_agg(to_jsonb(v)||jsonb_build_object('offer',active.offer) ORDER BY v.name,v.id)
+         FROM variants v ${offerJoin} WHERE v.product_id=p.id) AS variants
+      FROM products p JOIN categories c ON c.id=p.category_id WHERE ${publishedCatalogProduct}
+      UNION ALL
+      SELECT b.product_id,p.slug,b.name,b.brand,b.description,b.public_food,b.local_brochure_order AND b.stock_available,coalesce(c.id::text,'broshura-drugi'),
+        NULL::jsonb,b.age_restricted,coalesce(c.name,'Други предложения'),coalesce(c.slug,'broshura-drugi'),NOT b.local_brochure_order,b.page,b.ordinal,
+        CASE WHEN b.image_url IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(b.image_url) END,
+        jsonb_build_array(jsonb_build_object('id',b.variant_id,'name',b.name,'pack',b.pack,'unit',b.unit,
+          'available',b.local_brochure_order AND b.stock_available,'online_limit',CASE WHEN b.local_brochure_order THEN b.online_limit END,
+          'localBrochureOrder',b.local_brochure_order,'requiresVariantChoice',b.local_brochure_order AND b.requires_variant_choice,'offer',b.offer))
+      FROM brochure_listings b JOIN products p ON p.id=b.product_id LEFT JOIN categories c ON c.id=b.category_id
+    )
+    SELECT catalog.* FROM catalog
+    CROSS JOIN (SELECT ${searchWords("$2::text")} AS term) needle
+    CROSS JOIN LATERAL (SELECT ${searchWords("name")} AS title,
+      ${searchWords("brand")} AS maker, ${searchWords("category_name")} AS category) words
+    CROSS JOIN LATERAL (SELECT concat_ws(' ',words.title,words.maker,words.category) AS all_words) haystack
+    CROSS JOIN LATERAL (SELECT CASE
+      WHEN $2='' THEN 0
+      WHEN needle.term='' THEN -1
+      WHEN needle.term IN (words.title,words.maker) THEN 6
+      WHEN strpos(' '||words.title||' ',' '||needle.term||' ')>0 THEN 5
+      WHEN strpos(' '||words.title,' '||needle.term)>0 OR starts_with(words.maker,needle.term) THEN 4
+      WHEN NOT EXISTS (SELECT 1 FROM unnest(string_to_array(needle.term,' ')) t(word)
+        WHERE strpos(' '||haystack.all_words,' '||t.word)=0) THEN 3
+      WHEN EXISTS (SELECT 1 FROM synonyms s, unnest(s.alternatives||ARRAY[s.term]) AS hit,
+        unnest(s.alternatives||ARRAY[s.term]) AS alt WHERE ${searchWords("hit")}=needle.term
+        AND strpos(haystack.all_words,${searchWords("alt")})>0) THEN 3
+      WHEN length(needle.term)>=3 AND strpos(haystack.all_words,needle.term)>0 THEN 2
+      WHEN length(needle.term)>=4 AND NOT EXISTS (
+        SELECT 1 FROM unnest(string_to_array(needle.term,' ')) t(word)
+        WHERE strpos(' '||haystack.all_words,' '||t.word)=0
+          AND (length(t.word)<4 OR strict_word_similarity(t.word,words.title||' '||words.maker)
+            < CASE WHEN length(t.word)>=5 THEN 0.40 ELSE 0.55 END)
+      ) THEN 1
+      ELSE -1 END AS tier) score
+    WHERE ($3='' OR category_slug=$3) AND ($4='' OR slug=$4)
+      AND ($6::uuid[] IS NULL OR id=ANY($6::uuid[]))
+      AND score.tier>=0
+    ORDER BY score.tier DESC,
+      CASE WHEN $2<>'' THEN word_similarity(needle.term,words.title) END DESC,
+      listing_only,page,ordinal,name,id LIMIT $7`;
+  // Relevance-only suggestions can be limited before loading the catalog into memory.
+  // Availability, offer and price filters below need the full matching set.
+  const canLimitInSql = q && !opts.available && !opts.promo && !opts.offset &&
+    (!opts.sort || opts.sort === "relevance");
+  const limit = canLimitInSql && typeof opts.limit === "number" && Number.isSafeInteger(opts.limit) && opts.limit >= 0
+    ? opts.limit : null;
+  const params = [day, q, opts.category || "", opts.slug || "", localBrochureCampaign(), opts.ids ?? null, limit];
+  const rows = client ? (await client.query(statement, params)).rows : await query(statement, params);
   const products: ProductView[] = rows
     .map((p) => {
       const variants: VariantView[] = (p.variants || []).map((v: any) => {
         const price = effectivePrice(v, day);
         return {
+          listingOnly: p.listing_only,
+          localBrochureOrder: Boolean(v.localBrochureOrder),
+          requiresVariantChoice: Boolean(v.requiresVariantChoice),
           in_stock: p.available && v.available,
           food: { ...p.food, ...v.food },
           id: v.id,
@@ -242,7 +324,12 @@ export async function getCatalog(opts: Options = {}): Promise<ProductView[]> {
             (v.online_limit === null || Number(v.online_limit) > 0),
         };
       });
-      return { ...p, variants, available: variants.some((v) => v.available) };
+      return {
+        ...p,
+        listingOnly: p.listing_only,
+        variants,
+        available: variants.some((v) => v.available),
+      };
     })
     .filter(
       (p) =>
@@ -276,6 +363,12 @@ export async function getProduct(slug: string, date?: string) {
 }
 export async function getCategories() {
   return query<{ id: string; slug: string; name: string; image_url: string }>(
-    `SELECT c.id,c.slug,c.name,c.image_url FROM categories c WHERE EXISTS (SELECT 1 FROM products p WHERE p.category_id=c.id AND p.status='published' AND (coalesce(p.food->>'ageRestricted','false')<>'true' OR (SELECT value->>'ageEnabled' FROM settings WHERE key='site')='true')) ORDER BY c.sort_order,c.name`,
+    `WITH brochure_listings AS (${currentBrochureListings}), visible_categories AS (
+      SELECT c.id::text,c.slug,c.name,c.image_url,c.sort_order FROM categories c
+      WHERE EXISTS (SELECT 1 FROM products p WHERE p.category_id=c.id AND ${publishedCatalogProduct})
+         OR EXISTS (SELECT 1 FROM brochure_listings b WHERE b.category_id=c.id)
+      UNION ALL SELECT 'broshura-drugi','broshura-drugi','Други предложения','',2147483647
+      WHERE EXISTS (SELECT 1 FROM brochure_listings WHERE category_id IS NULL)
+    ) SELECT id,slug,name,image_url FROM visible_categories ORDER BY sort_order,name`,
   );
 }

@@ -148,14 +148,15 @@ def product_details(lines, is_kg):
 
 
 CATEGORIES = [
-    ("Млечни продукти", r"сирене|кашкавал|краве мляко|йогурт|краве масло|\bскир\b|сладолед"),
+    ("Дом и грижа",r"препарат|омекотител|дезодорант|кърпи|оде[яа]ло|тенджера|дъски|халат|за котки|храна за|тоалетна хартия|за пране"),
+    ("Млечни продукти", r"сирене|кашкавал|краве мляко|млечна напитка|йогурт|краве масло|\bскир\b|сладолед"),
     ("Плодове и зеленчуци",r"портокал|круша|ябълк|банан|краставиц"),
-    ("Месо и колбаси",r"пушен|луканк|шпек|свински|пилеш|надениц|кабанос|кренвирш|колбас|шунка|филе"),
+    ("Риба и морски дарове", r"скумрия|сьомга|пъстърва|риба тон"),
+    ("Месо и колбаси",r"пушен|луканк|шпек|свински|пилеш|пуешк|надениц|кабанос|кренвирш|колбас|шунка|филе"),
     ("Хляб и тестени изделия",r"\bхляб\b|козунак|кроасан|точени кори"),
-    ("Сладки и солени изделия",r"шоколад|бисквит|фъстъ|вафл|чипс|снакс|солети|бонбон|дъвк|пуканки|протеинов бар"),
-    ("Напитки",r"кафе|сок|студен чай|газирана|нектар|бира|водка|уиски|вино|сайдер|питейна"),
+    ("Сладки и солени изделия",r"шоколад|[бв]исквит|фъстъ|вафл|чипс|снакс|солети|гризини|бонбон|дъвк|пуканки|протеинов бар|\bдесерт\b"),
+    ("Напитки",r"кафе|\bсок\b|студен чай|газирана|нектар|бира|водка|уиски|вино|сайдер|питейна|pilsner|lager|coca.cola|sprite|fanta|cappy|queen['’]s"),
     ("Основни храни",r"лютеница|корнишон|риба|ориз|брашно|захар|семена|гроздови"),
-    ("Дом и грижа",r"препарат|омекотител|дезодорант|кърпи|одеяло|тенджера|дъски|халат|за котки|храна за"),
 ]
 
 
@@ -219,7 +220,7 @@ def sample_photo(pg, record, all_tags, out, stem):
 
 def extract(file, out, root):
     out.mkdir(parents=True,exist_ok=True)
-    campaign={"items":[], "skipped":[], "pages":[], "parserVersion":3}
+    campaign={"items":[], "skipped":[], "pages":[], "parserVersion":5}
     with pdfplumber.open(file) as pdf:
         if not 1 <= len(pdf.pages) <= 24:
             raise ValueError("Документът трябва да съдържа между 1 и 24 страници.")
@@ -251,7 +252,7 @@ def extract(file, out, root):
                 flags=" ".join(w["text"] for w in nearby)
                 kg=bool(re.search(r"\bкг\b",flags,re.I) and re.search(r"\bза\b",flags,re.I))
                 name,brand,pack,ambiguous,unit_prices=product_details(lines,kg)
-                category=next((c for c,r in CATEGORIES if re.search(r,name,re.I)),None)
+                category=next((c for c,r in CATEGORIES if re.search(r,name.split("•",1)[0],re.I)),None)
                 article={"page":index,"ordinal":i+1,"name":name,"brand":brand,"pack":pack,
                          "unit":"kg" if kg else "piece","priceCents":tag["cents"],"caption":b["box"],
                          "tag":tag["box"],"text":"\n".join(lines),"category":category,
@@ -292,6 +293,17 @@ def extract(file, out, root):
                     extra={**parent,"name":terms,"pack":pack,"ordinal":ordinal,"priceCents":int(w["text"].replace(",","").replace(".","")),
                            "text":parent["text"]+"\n"+pack+" — "+w["text"]+" €","ambiguous":True,"buy":1,"pay":1,"terms":"",
                            "snippet":f"p{index}-i{ordinal}-source.webp","reasons":["Потвърдете размера на допълнителния вариант от таблицата."]}
+                    size_pair=re.search(r"Размери:\s*(\d+(?:[.,]\d+)?)\s*[xх×]\s*(\d+(?:[.,]\d+)?)\s*см;\s*(\d+(?:[.,]\d+)?)\s*л\s*/\s*(\d+(?:[.,]\d+)?)\s*[xх×]\s*(\d+(?:[.,]\d+)?)\s*см;\s*(\d+(?:[.,]\d+)?)\s*л",parent["text"],re.I)
+                    if size_pair:
+                        diam,h1,volume,other,h2,other_volume=size_pair.groups()
+                        if re.search(rf"\b{re.escape(other)}\s*см",pack) and other_volume.replace(",",".") in pack.replace(",","."):
+                            # Keep source identities stable across parser revisions.
+                            parent["identityPack"],extra["identityPack"]=parent["pack"],extra["pack"]
+                            parent["pack"]=f"{diam}×{h1} см, {volume.replace('.', ',')} л"
+                            extra["pack"]=f"{other}×{h2} см, {other_volume.replace('.', ',')} л"
+                            parent["ambiguous"]=extra["ambiguous"]=False
+                            for item in (parent,extra):
+                                item["reasons"]=[r for r in item["reasons"] if r!="Уточнете разновидностите и разфасовката."]
                     rect=span(parent["box"],[size_column["x0"]-5,h[1]-4,w["x1"]+10,w["bottom"]+6])
                     extra["box"]=rect
                     rendered.crop(tuple(round(v*scale) for v in rect)).save(out/extra["snippet"],quality=88)
@@ -331,7 +343,8 @@ def extract(file, out, root):
                 continue
         campaign["skipped"].append({"page":badge["page"],"reason":"Несвързано графично условие.","text":badge["text"]})
     for a in campaign["items"]:
-        key=re.sub(r"[^0-9a-zа-я]+"," ",f'{a["name"]} {a["unit"]} {a["pack"]}'.casefold()).strip()
+        identity_pack=a.pop("identityPack",a["pack"])
+        key=re.sub(r"[^0-9a-zа-я]+"," ",f'{a["name"]} {a["unit"]} {identity_pack}'.casefold()).strip()
         a["key"]=hashlib.sha256(key.encode()).hexdigest()
     (out/"manifest.json").write_text(json.dumps(campaign,ensure_ascii=False),encoding="utf8")
 

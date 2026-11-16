@@ -175,6 +175,12 @@ test('Известия: локална SMTP доставка, Twilio заявк�
     for (const value of [customer.name, customer.phone, customer.email, customer.street, order.token, sid, basic, password, config.BETTER_AUTH_SECRET]) {
       assert.ok(!logs.includes(value), 'Диагностиката и записите за изпращане не разкриват лични данни и ключове.');
     }
+    await query("UPDATE orders SET test_only=true");
+    await query("UPDATE notification_jobs SET status='pending',next_at=now() WHERE channel IN ('email','sms')");
+    assert.equal(await dispatch(), 2);
+    assert.equal(mailbox.messages.length, 1);
+    assert.equal(calls.length, 2);
+    assert.equal((await query("SELECT count(*)::int n FROM notification_jobs WHERE status='test_captured'"))[0].n, 2);
   } finally {
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];

@@ -18,7 +18,7 @@ function back(message:string,batch="",item=""):never {
 export async function checkNow(){
   const actor=await requireStaff(["staff"])
   await enqueueCheck(actor.id)
-  back("Проверката е заявена. Фоновият процес ще я изпълни при следващото опресняване.")
+  back("Брошурата е наред за проверка.")
 }
 export async function restoreRevision(f:FormData){
   const actor=await requireStaff(["staff"])

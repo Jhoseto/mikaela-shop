@@ -32,7 +32,8 @@ function restore(value: string | null): BasketLine[] {
         Number.isFinite(l.price) &&
         l.price >= 0 &&
         Number.isFinite(l.step) &&
-        l.step > 0,
+        l.step > 0 &&
+        (l.requestedVariant == null || typeof l.requestedVariant === "string"),
     );
   } catch {
     return [];
@@ -84,7 +85,7 @@ function useBasketState() {
       }),
     );
   }, []);
-  const add = (product: ShopProduct, v: ShopVariant) => {
+  const add = (product: Pick<ShopProduct, "slug" | "name" | "images">, v: ShopVariant) => {
     if (!v.available || v.price == null) return;
     const price = v.price;
     setLines((previous) => {
@@ -108,6 +109,8 @@ function useBasketState() {
           productSlug: product.slug,
           title: product.name,
           variantName: v.name,
+          requiresVariantChoice: v.requiresVariantChoice,
+          localBrochureOrder: v.localBrochureOrder,
           pack: v.pack,
           unit: v.unit,
           step: v.step,
@@ -126,7 +129,7 @@ function useBasketState() {
   };
   const edit = (
     id: string,
-    patch: Partial<Pick<BasketLine, "substitution" | "note">>,
+    patch: Partial<Pick<BasketLine, "substitution" | "note" | "requestedVariant">>,
   ) =>
     setLines((previous) =>
       previous.map((l) => (l.variantId === id ? { ...l, ...patch } : l)),

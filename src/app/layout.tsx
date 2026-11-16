@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "@fontsource-variable/source-sans-3";
+import "@fontsource-variable/roboto/wght.css";
+import "@fontsource-variable/playfair-display/wght.css";
+import "@fontsource-variable/playfair-display/wght-italic.css";
 import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "Моят Магазин Микаела", template: "%s · Микаела" },

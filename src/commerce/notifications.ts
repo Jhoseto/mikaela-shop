@@ -131,7 +131,7 @@ export async function sendNotifications(limit = 20) {
             track;
         }
       }
-      const mode = process.env.NOTIFICATION_MODE || "test";
+      const mode = o.test_only ? "test" : process.env.NOTIFICATION_MODE || "test";
       let status = "sent";
       if (job.channel === "print") {
         status = "print_ready";

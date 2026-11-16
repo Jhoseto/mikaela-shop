@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 export default async function CourierPage() {
   const actor = await requireStaff(["courier"]);
   const rows = await query(
-    `select o.id,o.number,o.customer-'email'-'note' as customer,o.delivery_snapshot,o.total_cents,o.payment_status,o.payment_method,o.status,
+    `select o.id,o.number,o.test_only,o.customer-'email'-'note' as customer,o.delivery_snapshot,o.total_cents,o.payment_status,o.payment_method,o.status,
  (select coalesce(sum(amount_cents),0)::int from payments p where p.order_id=o.id) balance,
  exists(select 1 from order_items i where i.order_id=o.id and i.status<>'missing' and coalesce(i.change_detail->'prepared'->'food'->>'ageRestricted',i.snapshot->'food'->>'ageRestricted')='true') age
  from orders o where o.assigned_to=$1 and (o.status in('ready','on_route','problem') or o.status='delivered' and o.payment_status not in('paid','refunded')) order by o.delivery_snapshot->>'day',o.delivery_snapshot->>'start_time',o.number`,
@@ -45,6 +45,7 @@ export default async function CourierPage() {
         {rows.map((o) => (
           <Panel title={"Поръчка № " + o.number} key={o.id}>
             <Pill value={o.status} /> <Pill value={o.payment_status} />
+            {o.test_only && <p><strong>Тестова поръчка · Без реална доставка или плащане</strong></p>}
             <h3 style={{ marginTop: 12 }}>{o.customer.name}</h3>
             <p>
               {address(o)}
@@ -52,7 +53,7 @@ export default async function CourierPage() {
               {interval(o)}
             </p>
             {o.customer.directions && <p>{o.customer.directions}</p>}
-            <div className="adm-actions">
+            {!o.test_only && <div className="adm-actions">
               <a href={"tel:" + o.customer.phone} className="adm-btn alt">
                 Обаждане · {o.customer.phone}
               </a>
@@ -67,7 +68,7 @@ export default async function CourierPage() {
               >
                 Навигация
               </a>
-            </div>
+            </div>}
             <p>
               <strong>
                 За получаване · {money(o.total_cents - o.balance)}

@@ -1,4 +1,6 @@
 import { saveOffer } from "./offers";
+import { saveCarousel } from "./carousel-command";
+import { activeLocalBrochure } from "@/commerce/local-brochure";
 import type { PoolClient } from "pg";
 import { InputIssue } from "./http";
 import {
@@ -34,6 +36,7 @@ async function writeSite(c: PoolClient, data: Values) {
   await c.query("update settings set value=$1 where key='site'", [data]);
 }
 export async function manage(c: PoolClient, command: string, d: Values) {
+  if (command === "page.carousel") return saveCarousel(c, d);
   if (command === "notification.retry") {
     const r = await c.query(
       "update notification_jobs set status='pending',attempts=0,next_at=now(),last_error=null where id=$1 and status in ('retry','failed') returning id",
@@ -76,8 +79,9 @@ export async function manage(c: PoolClient, command: string, d: Values) {
       )
         throw new InputIssue("Въведи само домейна с https://.");
     }
+    const openSetting = await activeLocalBrochure(c) ? "localOrdersOpen" : "ordersOpen";
+    s[openSetting] = on(d, "ordersOpen");
     for (const key of [
-      "ordersOpen",
       "cardEnabled",
       "registeredFood",
       "transportReady",
@@ -96,7 +100,7 @@ export async function manage(c: PoolClient, command: string, d: Values) {
     s.promoBasis = one(d, "promoBasis", ["delivery", "order"], "delivery");
     s.logo = media(d, "logo")[0] || "";
     s.photo = media(d, "photo")[0] || "";
-    if (s.ordersOpen && !s.demo) {
+    if (openSetting === "ordersOpen" && s.ordersOpen && !s.demo) {
       if (
         ![
           "company",
@@ -117,7 +121,7 @@ export async function manage(c: PoolClient, command: string, d: Values) {
           "Попълни фирмените данни, контактите, работното време и потвържденията преди приемане на поръчки.",
         );
       const r = await c.query(
-        "select exists(select 1 from pages where slug='obshti-usloviya' and published is not null) legal, exists(select 1 from delivery_zones z where active and exists(select 1 from delivery_rules r where r.zone_id=z.id and r.capacity>0)) delivery",
+        "select exists(select 1 from pages where slug='obshti-usloviya' and published is not null) legal, exists(select 1 from delivery_zones z where active and not z.test_only and exists(select 1 from delivery_rules r where r.zone_id=z.id and r.capacity>0)) delivery",
       );
       if (!r.rows[0].legal || !r.rows[0].delivery)
         throw new InputIssue(
@@ -129,7 +133,7 @@ export async function manage(c: PoolClient, command: string, d: Values) {
   }
   if (command === "settings.pause") {
     const s = await site(c);
-    s.ordersOpen = false;
+    s[await activeLocalBrochure(c) ? "localOrdersOpen" : "ordersOpen"] = false;
     await writeSite(c, s);
     return {};
   }

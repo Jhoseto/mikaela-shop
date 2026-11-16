@@ -20,6 +20,10 @@ export type ShopVariant = {
   unit: "piece" | "kg";
   price: number | null;
   available: boolean;
+  listingOnly?: boolean;
+  localBrochureOrder?: boolean;
+  requiresVariantChoice?: boolean;
+  missingFoodLabel?: boolean;
   inStock?: boolean;
   unitPrice?: string;
   regular?: number;
@@ -82,6 +86,7 @@ export type ShopSettings = {
   siteUrl?: string;
   enabled: boolean;
   demo: boolean;
+  localBrochureOrdering: boolean;
   card: boolean;
   termsVersion?: string;
   weightTolerancePercent?: number;
@@ -92,6 +97,9 @@ export type BasketLine = {
   productSlug: string;
   title: string;
   variantName: string;
+  requiresVariantChoice?: boolean;
+  requestedVariant?: string;
+  localBrochureOrder?: boolean;
   pack: string;
   unit: "kg" | "piece";
   step: number;
@@ -104,6 +112,10 @@ export type BasketLine = {
   substitution: "skip" | "call";
   note: string;
 };
+export function basketVariantLabel(line: BasketLine) {
+  const variant = line.requiresVariantChoice ? line.requestedVariant : line.variantName;
+  return [variant !== line.title ? variant : "", line.pack].filter(Boolean).join(" · ");
+}
 export const money = (cents: number) =>
   new Intl.NumberFormat("bg-BG", { style: "currency", currency: "EUR" }).format(
     cents / 100,
@@ -138,6 +150,35 @@ export const infoPages = {
 } as const;
 export const productHref = (slug: string) =>
   "/produkti/" + encodeURIComponent(slug);
+export function searchSuggestion(product: ShopProduct) {
+  const variant = product.variants.find((item) => item.available) ?? product.variants[0];
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    href: productHref(product.slug),
+    image: product.images[0] || "",
+    price: variant?.price != null ? priceText(variant) : "",
+    variant: variant?.available && variant.price != null && (variant.max == null || variant.max >= variant.step)
+      ? {
+          id: variant.id,
+          name: variant.name,
+          pack: variant.pack,
+          unit: variant.unit,
+          price: variant.price,
+          available: variant.available,
+          step: variant.step,
+          max: variant.max,
+          regular: variant.regular,
+          offer: variant.offer,
+          requiresVariantChoice: variant.requiresVariantChoice,
+          localBrochureOrder: variant.localBrochureOrder,
+          restricted: variant.restricted,
+        }
+      : null,
+  };
+}
+export type SearchSuggestion = ReturnType<typeof searchSuggestion>;
 export const categoryHref = (slug: string) =>
   "/kategorii/" + encodeURIComponent(slug);
 export function routeSlug(value: string) {

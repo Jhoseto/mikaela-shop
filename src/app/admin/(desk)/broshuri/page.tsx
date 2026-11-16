@@ -17,7 +17,7 @@ export default async function Brochures({searchParams}:{searchParams:Promise<{ba
   const selected=data.items.find(i=>i.id===params.item),a=selected?.extracted
   const roots=[...new Map(data.variants.map(v=>[v.product_id,v])).values()]
   return <div className="brochure-desk">
-    <PageHeading title="Брошури" subtitle="Проверка на офертите и местния асортимент." action={<form action={checkNow}><button className="adm-btn">Провери сега</button></form>}/>
+    <PageHeading title="Брошури" action={<form action={checkNow}><button className="adm-btn">Провери сега</button></form>}/>
     {params.notice&&<p className="br-notice" role="status">{params.notice.slice(0,500)}</p>}
     <div className="br-top">
       <Panel title="Кампании">{data.campaigns.length?data.campaigns.map(c=><p key={c.id}><strong>{c.starts>today()?"Предстояща":"Актуална"} · </strong><Link href={`?batch=${c.current_batch}`}>{formatDate(c.starts)} – {formatDate(c.ends)}</Link></p>):<Empty>Няма активна или предстояща брошура.</Empty>}

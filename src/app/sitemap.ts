@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const s = await shopSettings(),
     base = origin(s);
-  if (!base || s.demo) return [];
+  if (!base || s.demo || s.localBrochureOrdering) return [];
   const pages = [
     "/",
     "/produkti",

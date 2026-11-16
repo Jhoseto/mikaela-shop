@@ -2,7 +2,7 @@
 import { useState, type FormEvent } from "react";
 import { Field } from "./widgets";
 
-export function AccessForm({ mode }: { mode: "login" | "enroll" | "verify" }) {
+export function AccessForm({ mode, localEmail }: { mode: "login" | "enroll" | "verify"; localEmail?: string }) {
   const [setup, setSetup] = useState<{
     secret: string;
     codes: string[];
@@ -15,6 +15,7 @@ export function AccessForm({ mode }: { mode: "login" | "enroll" | "verify" }) {
     setError("");
     setBusy(true);
     const d = new FormData(e.currentTarget);
+    const login = String(d.get("email") ?? "").trim();
     const path =
       mode === "login"
         ? "sign-in/email"
@@ -25,7 +26,7 @@ export function AccessForm({ mode }: { mode: "login" | "enroll" | "verify" }) {
             : "two-factor/verify-totp";
     const payload =
       mode === "login"
-        ? { email: d.get("email"), password: d.get("password") }
+        ? { email: localEmail && login.toLowerCase() === "admin" ? localEmail : login, password: d.get("password") }
         : mode === "enroll" && !setup
           ? { password: d.get("password") }
           : { code: d.get("code") };
@@ -41,7 +42,7 @@ export function AccessForm({ mode }: { mode: "login" | "enroll" | "verify" }) {
           res.status === 429
             ? "Твърде много опити. Изчакай и опитай отново."
             : mode === "login"
-              ? "Провери имейла и паролата."
+              ? "Провери данните за вход."
               : "Провери паролата или въведения код.",
         );
       if (path === "two-factor/enable") {
@@ -72,11 +73,13 @@ export function AccessForm({ mode }: { mode: "login" | "enroll" | "verify" }) {
         </h1>
         <form className="adm-fields" onSubmit={submit}>
           {mode === "login" && (
-            <Field title="Служебен имейл">
+            <Field title={localEmail ? "Служебен имейл или потребителско име" : "Служебен имейл"}>
               <input
-                type="email"
+                type={localEmail ? "text" : "email"}
                 name="email"
                 autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 required
               />
             </Field>

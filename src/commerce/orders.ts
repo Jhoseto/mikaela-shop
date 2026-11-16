@@ -493,6 +493,7 @@ export async function tracking(token: string) {
     const o = await withToken(token, c);
     const order = {
       number: o.number,
+      test_only: o.test_only === true,
       status: o.status,
       payment_status: o.payment_status,
       payment_method: o.payment_method,

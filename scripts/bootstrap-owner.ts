@@ -2,9 +2,10 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { pool, query } from "../src/db";
 import { createStaff } from "../src/auth/manage";
+import { localAdminId } from "../src/auth/local-admin";
 try {
   if (
-    !(await query("SELECT 1 FROM staff_roles WHERE role='owner' LIMIT 1"))
+    !(await query("SELECT 1 FROM staff_roles WHERE role='owner' AND user_id<>$1 LIMIT 1", [localAdminId]))
       .length
   ) {
     const email = "owner@localhost.invalid";

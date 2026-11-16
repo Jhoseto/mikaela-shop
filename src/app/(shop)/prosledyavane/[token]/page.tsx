@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { Tracking } from "@/ui/shop/tracking";
 export const metadata = {
-  title: "Защитено проследяване",
+  title: "Проследяване на поръчка",
   robots: { index: false, follow: false },
   referrer: "no-referrer" as const,
 };

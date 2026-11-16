@@ -1,4 +1,8 @@
 import { AccessForm } from "@/admin/access-form";
-export default function Login() {
-  return <AccessForm mode="login" />;
+import { headers } from "next/headers";
+import { allowsLocalAdmin, localAdminEmail } from "@/auth/local-admin";
+
+export default async function Login() {
+  const localEmail = allowsLocalAdmin(await headers()) ? localAdminEmail : undefined;
+  return <AccessForm mode="login" localEmail={localEmail} />;
 }

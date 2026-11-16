@@ -36,14 +36,15 @@ export default async function InfoPage({ params }: { params: Params }) {
         {p?.body && <div className="cms-body">{p.body}</div>}
         {slug === "dostavka" && (
           <>
-            <h2>Провери района си</h2>
+            {(s.localBrochureOrdering || s.demo) && <p>Пробните поръчки са без доставка и плащане.</p>}
+            <h2>Район за доставка</h2>
             <AreaChooser />
-            <h2>Плащане при доставка</h2>
-            <p>
-              Можеш да платиш в брой при получаване.
-              {s.card &&
-                " Магазинът приема и плащане с карта на мобилен ПОС при доставката."}
-            </p>
+            {!s.localBrochureOrdering && !s.demo && (
+              <>
+                <h2>Плащане при получаване</h2>
+                <p>{s.card ? "В брой или с карта." : "В брой."}</p>
+              </>
+            )}
           </>
         )}
         {(slug === "kontakti" || slug === "za-magazina") && (
@@ -54,6 +55,9 @@ export default async function InfoPage({ params }: { params: Params }) {
                 src={s.shopPhoto}
                 alt="Моят Магазин Микаела"
               />
+            )}
+            {slug === "za-magazina" && !p?.body && (
+              <p>Микаела е квартален хранителен магазин. <Link className="underline underline-offset-2" href="/broshura">Разгледай брошурата</Link> или <Link className="underline underline-offset-2" href="/informacia/kontakti">се свържи с нас</Link>.</p>
             )}
             <dl className="contact-list">
               {s.company && (
@@ -111,23 +115,21 @@ export default async function InfoPage({ params }: { params: Params }) {
                 </div>
               )}
             </dl>
-            {!p?.body && !s.address && !s.email && !s.phone && !s.shopPhoto && (
-              <p>Магазинът подготвя информацията за тази страница.</p>
-            )}
           </>
         )}
         {slug === "otkaz-i-reklamacii" && (
           <>
             <h2>Откажете се от договора тук</h2>
             <p>
-              За стоки с приложимо право на отказ отвори защитената поръчка. В
-              същия екран можеш да подадеш рекламация по конкретен артикул.
+              Отвори поръчката си, за да заявиш отказ или рекламация за артикул.
             </p>
             <FindOrder />
           </>
         )}
         {!p?.body && ["obshti-usloviya", "poveritelnost"].includes(slug) && (
-          <p>Магазинът все още не е публикувал текста на тази страница.</p>
+          <Link className="text-link" href="/informacia/kontakti">
+            {slug === "poveritelnost" ? "Свържи се с нас относно личните си данни" : "Свържи се с нас относно условията"}
+          </Link>
         )}
       </article>
     </div>

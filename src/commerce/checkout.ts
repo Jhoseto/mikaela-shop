@@ -5,6 +5,12 @@ import { query, tx } from "@/db";
 import { amountFor, basketAmounts } from "./bundles";
 export { amountFor } from "./bundles";
 import { today, effectivePrice, offerJoin, siteDefaults } from "./catalog";
+import {
+  activeLocalBrochure,
+  localBrochureCampaign,
+  localTermsSlug,
+} from "./local-brochure";
+import { datedBrochureListings } from "@/importer/public-listings";
 
 export class ShopError extends Error {
   constructor(
@@ -21,6 +27,7 @@ const itemSchema = z.object({
   quantity: z.number().positive().max(10000),
   substitution: z.enum(["skip", "call"]).default("skip"),
   note: z.string().trim().max(400).default(""),
+  requestedVariant: z.string().trim().max(120).optional(),
   weightTolerance: z.number().min(0).max(100).default(0),
 });
 export const cartSchema = z.object({
@@ -82,29 +89,33 @@ export async function generateSlots(c: PoolClient, zoneId?: string) {
 }
 const openSlot = `z.active AND s.active AND s.reserved<s.capacity AND (s.day+s.start_time) AT TIME ZONE 'Europe/Sofia'>now()+make_interval(mins=>z.prep_minutes) AND (z.cutoff IS NULL OR s.day>(now() AT TIME ZONE 'Europe/Sofia')::date OR (now() AT TIME ZONE 'Europe/Sofia')::time<z.cutoff) AND NOT EXISTS(SELECT 1 FROM delivery_exceptions e WHERE e.zone_id=z.id AND e.day=s.day AND e.closed)`;
 export async function delivery(zoneId?: string | null) {
+  const campaign = await activeLocalBrochure();
   const zones = await query(
-    "SELECT id,name,min_cents,fee_cents,free_cents FROM delivery_zones WHERE active ORDER BY name",
+    "SELECT id,name,min_cents,fee_cents,free_cents FROM delivery_zones WHERE active AND test_only=$1 ORDER BY name",
+    [!!campaign],
   );
-  if (!zoneId || !id.safeParse(zoneId).success) return { zones, slots: [] };
+  if (!zoneId || !zones.some((z) => z.id === zoneId))
+    return { zones, slots: [] };
   return {
     zones,
     slots: await tx(async (c) => {
       await generateSlots(c, zoneId);
       return (
         await c.query(
-          `SELECT s.id,s.zone_id,s.day,s.start_time,s.end_time,s.capacity-s.reserved AS remaining FROM delivery_slots s JOIN delivery_zones z ON s.zone_id=z.id WHERE s.zone_id=$1 AND ${openSlot} ORDER BY s.day,s.start_time LIMIT 150`,
-          [zoneId],
+          `SELECT s.id,s.zone_id,s.day,s.start_time,s.end_time,s.capacity-s.reserved AS remaining FROM delivery_slots s JOIN delivery_zones z ON s.zone_id=z.id WHERE s.zone_id=$1 AND z.test_only=$2 AND ($3::date IS NULL OR s.day<=$3) AND ${openSlot} ORDER BY s.day,s.start_time LIMIT 150`,
+          [zoneId, !!campaign, campaign?.ends ?? null],
         )
       ).rows;
     }),
   };
 }
-function ensureOpen(site: any, version: number) {
-  if (!site.ordersOpen)
+function ensureOpen(site: any, version: number, testOnly: boolean) {
+  if (!(testOnly ? site.localOrdersOpen === true : site.ordersOpen))
     throw new ShopError("В момента магазинът не приема нови поръчки.", 409);
   if (
     !version ||
-    (!site.demo &&
+    (!testOnly &&
+      !site.demo &&
       (!site.company ||
         !site.companyId ||
         !site.address ||
@@ -115,13 +126,19 @@ function ensureOpen(site: any, version: number) {
         !site.brandReady ||
         !site.legalReady))
   )
-    throw new ShopError("Магазинът подготвя приемането на поръчки.", 409);
+    throw new ShopError("В момента магазинът не приема нови поръчки.", 409);
 }
 export async function priceBasket(
   c: PoolClient,
   input: CartInput,
   lock = false,
 ) {
+  if (lock && localBrochureCampaign()) {
+    // Serialize final admission with the importer/reviewer replacing the campaign.
+    await c.query("SELECT pg_advisory_xact_lock_shared($1)", [684200163]);
+  }
+  const campaign = await activeLocalBrochure(c);
+  const testOnly = !!campaign;
   const site = {
     ...siteDefaults,
     ...(
@@ -133,44 +150,71 @@ export async function priceBasket(
   };
   const terms = (
     await c.query(
-      "SELECT version,published FROM pages WHERE slug='obshti-usloviya' AND published IS NOT NULL" +
+      "SELECT version,published FROM pages WHERE slug=$1 AND published IS NOT NULL" +
         (lock ? " FOR SHARE" : ""),
+      [testOnly ? localTermsSlug : "obshti-usloviya"],
     )
   ).rows[0];
-  ensureOpen(site, terms?.version);
+  ensureOpen(site, terms?.version, testOnly);
   const slot = (
     await c.query(
-      `SELECT s.id,s.day,s.start_time,s.end_time,s.zone_id,z.name,z.min_cents,z.fee_cents,z.free_cents FROM delivery_slots s JOIN delivery_zones z ON s.zone_id=z.id WHERE s.id=$1 AND z.id=$2 AND ${openSlot} ${lock ? "FOR UPDATE OF s FOR SHARE OF z" : ""}`,
-      [input.slotId, input.zoneId],
+      `SELECT s.id,s.day,s.start_time,s.end_time,s.zone_id,z.name,z.min_cents,z.fee_cents,z.free_cents FROM delivery_slots s JOIN delivery_zones z ON s.zone_id=z.id WHERE s.id=$1 AND z.id=$2 AND z.test_only=$3 AND ${openSlot} ${lock ? "FOR UPDATE OF s FOR SHARE OF z" : ""}`,
+      [input.slotId, input.zoneId, testOnly],
     )
   ).rows[0];
   if (!slot)
     throw new ShopError(
-      "Интервалът е запълнен или вече е затворен. Изберете друг.",
+      "Този интервал за доставка вече не е свободен. Избери друг.",
       409,
     );
+  if (campaign && (slot.day < campaign.starts || slot.day > campaign.ends))
+    throw new ShopError("Избери ден за доставка в срока на брошурата.", 409);
   if (input.payment === "card" && !site.cardEnabled)
     throw new ShopError("Плащането с карта при доставка не е достъпно.", 409);
   const ids = input.items.map((i) => i.variantId);
   if (new Set(ids).size !== ids.length)
-    throw new ShopError("Обединете количествата на еднаквите варианти.");
+    throw new ShopError("Един продукт е добавен два пъти. Провери количеството в количката.");
   const day = site.promoBasis === "order" ? today() : slot.day;
+  if (lock && campaign) {
+    await c.query(
+      "SELECT v.id FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id=ANY($1::uuid[]) ORDER BY v.id FOR SHARE OF p,v",
+      [ids],
+    );
+  }
   const data = (
     await c.query(
       `SELECT v.*,p.name product_name,p.slug,p.brand,(p.food||v.food) food,p.origin,p.available local_available,cat.name category_name,active.offer FROM variants v JOIN products p ON p.id=v.product_id JOIN categories cat ON cat.id=p.category_id ${offerJoin} WHERE v.id=ANY($2::uuid[]) AND p.status='published' ORDER BY v.id ${lock ? "FOR SHARE OF v,p" : ""}`,
       [day, ids],
     )
   ).rows;
+  if (campaign) {
+    const flyer = await c.query(
+      `SELECT b.variant_id AS id,b.product_id,b.name AS product_name,b.name,b.brand,p.slug,
+        coalesce(cat.name,'Други предложения') AS category_name,b.public_food AS food,b.pack,b.unit,
+        b.stock_available AS available,b.stock_available AS local_available,b.online_limit,
+        b.local_brochure_order,b.requires_variant_choice,b.offer
+        FROM (${datedBrochureListings("$3")}) b JOIN products p ON p.id=b.product_id
+        LEFT JOIN categories cat ON cat.id=b.category_id WHERE b.variant_id=ANY($2::uuid[]) AND b.local_brochure_order`,
+      [slot.day, ids, localBrochureCampaign()],
+    );
+    data.push(...flyer.rows);
+  }
   const items = input.items.map((i) => {
     const v = data.find((v) => v.id === i.variantId);
     if (
       !v ||
       !v.available ||
       !v.local_available ||
-      (v.food.ageRestricted && !site.ageEnabled)
+      (v.food.ageRestricted && !site.ageEnabled && !v.local_brochure_order)
     )
       throw new ShopError(
-        "Артикул от количката е недостъпен. Обновете количката.",
+        "Артикул от количката вече е недостъпен. Прегледай количката.",
+        409,
+      );
+    const requestedVariant = i.requestedVariant?.trim();
+    if (v.requires_variant_choice && !requestedVariant)
+      throw new ShopError(
+        "Посочи желания вкус, вид или размер за „" + v.product_name + "“.",
         409,
       );
     if (
@@ -179,14 +223,14 @@ export async function priceBasket(
       (v.online_limit != null && i.quantity > Number(v.online_limit))
     )
       throw new ShopError(
-        "Проверете количеството за „" + v.product_name + "“.",
+        "Провери количеството за „" + v.product_name + "“.",
         409,
       );
     if (
       i.weightTolerance > Number(site.weightTolerance) ||
       (v.unit !== "kg" && i.weightTolerance > 0)
     )
-      throw new ShopError("Проверете разрешеното отклонение за теглото.", 409);
+      throw new ShopError("Провери допустимата разлика в теглото.", 409);
     const { price_cents: unitCents, offer } = effectivePrice(v, day);
     if (unitCents === null)
       throw new ShopError(
@@ -200,10 +244,14 @@ export async function priceBasket(
     const lineCents = amountFor(unitCents, i.quantity, offer, regular);
     return {
       ...i,
+      requestedVariant: v.requires_variant_choice
+        ? requestedVariant
+        : undefined,
       productId: v.product_id,
       productName: v.product_name,
       categoryName: v.category_name,
-      variantName: v.name,
+      variantName: v.requires_variant_choice ? requestedVariant! : v.name,
+      ...(v.local_brochure_order ? { printedName: v.product_name } : {}),
       pack: v.pack,
       unit: v.unit,
       unitCents,
@@ -237,6 +285,7 @@ export async function priceBasket(
       "Сумата надвишава поддържания размер на онлайн поръчка.",
     );
   const value = {
+    testOnly,
     items,
     subtotal,
     delivery: fee,
@@ -255,7 +304,7 @@ export async function priceBasket(
   return {
     ...value,
     signature: sign("price", JSON.stringify({ ...value, seller })),
-    termsContent: { ...terms.published, seller },
+    termsContent: { ...terms.published, seller, testOnly },
   };
 }
 export async function quote(input: CartInput) {
@@ -277,7 +326,7 @@ export async function submit(input: OrderInput) {
     if (old) {
       if (old.request_hash !== fingerprint)
         throw new ShopError(
-          "Ключът за поръчка вече е използван с други данни.",
+          "Поръчката вече е приета. Провери потвърждението, преди да направиш нова.",
           409,
         );
       return { number: String(old.number), token: tokenFor(old.id) };
@@ -292,7 +341,7 @@ export async function submit(input: OrderInput) {
     ) {
       const { termsContent, ...publicQuote } = q;
       throw new ShopError(
-        "Условията са променени. Прегледайте новата сума и потвърдете.",
+        "Условията са променени. Прегледай сумата и потвърди отново.",
         409,
         { quote: publicQuote },
       );
@@ -301,7 +350,7 @@ export async function submit(input: OrderInput) {
     const token = tokenFor(uuid);
     const row = (
       await c.query(
-        `INSERT INTO orders(id,idempotency_key,request_hash,token_hash,customer,zone_id,slot_id,delivery_snapshot,payment_method,subtotal_cents,delivery_cents,extra_cents,original_cents,total_cents,terms_version,terms_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15) RETURNING number`,
+        `INSERT INTO orders(id,idempotency_key,request_hash,token_hash,customer,zone_id,slot_id,delivery_snapshot,payment_method,subtotal_cents,delivery_cents,extra_cents,original_cents,total_cents,terms_version,terms_snapshot,test_only) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15,$16) RETURNING number`,
         [
           uuid,
           input.idempotencyKey,
@@ -318,6 +367,7 @@ export async function submit(input: OrderInput) {
           q.total,
           q.termsVersion,
           q.termsContent,
+          q.testOnly,
         ],
       )
     ).rows[0];

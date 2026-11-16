@@ -88,13 +88,13 @@ export function FindOrder() {
           router.push("/prosledyavane/" + encodeURIComponent(token) + "#otkaz");
         } catch {
           setError(
-            "Въведи защитената връзка или кода от потвърждението на поръчката.",
+            "Въведи връзката или кода от потвърждението на поръчката.",
           );
         }
       }}
     >
       <label className="field">
-        Защитена връзка или код за проследяване
+        Връзка или код за проследяване
         <input
           value={value}
           required
@@ -139,7 +139,9 @@ export function Tracking({ token }: { token: string }) {
     const poll = () => {
       if (document.visibilityState === "visible")
         refresh().catch((e) => {
-          if (active) setError(e.message);
+          if (active) setError(e instanceof TypeError || e instanceof SyntaxError
+            ? "Не успяхме да заредим поръчката. Опитай отново."
+            : e.message);
         });
     };
     poll();
@@ -195,7 +197,8 @@ export function Tracking({ token }: { token: string }) {
       );
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Възникна грешка.");
+      setError(e instanceof Error && !(e instanceof TypeError || e instanceof SyntaxError)
+        ? e.message : "Не успяхме да потвърдим промяната. Провери поръчката си.");
     } finally {
       setBusy(false);
     }
@@ -227,16 +230,11 @@ export function Tracking({ token }: { token: string }) {
           <h1>
             {o.status === "new" ? "Поръчката е получена" : "Твоята поръчка"}
           </h1>
-          <p>
-            {o.status === "new"
-              ? "Магазинът ще потвърди приемането отделно."
-              : "Следи подготовката и доставката тук."}
-          </p>
+          {o.test_only ? <p>Пробна поръчка без доставка и плащане.</p>
+            : o.status === "new" && <p>Очаква потвърждение от магазина.</p>}
         </div>
       </div>
-      <p className="shop-notice">
-        Запази тази защитена връзка за проследяване и връзка с магазина.
-      </p>
+      {o.status === "new" && <p className="fine">Запази връзката за проследяване на поръчката.</p>}
       <div className="checkout-grid">
         <div className="checkout-sections">
           <section className="surface">
@@ -286,12 +284,12 @@ export function Tracking({ token }: { token: string }) {
                   <dd>{money(o.extra_cents)}</dd>
                 </div>
               )}
-              <div>
+              {o.original_cents !== o.total_cents && <div>
                 <dt>Първоначална сума</dt>
                 <dd>{money(o.original_cents || 0)}</dd>
-              </div>
+              </div>}
               <div className="total-line">
-                <dt>Текуща сума</dt>
+                <dt>Общо</dt>
                 <dd>{money(o.total_cents || 0)}</dd>
               </div>
             </dl>
@@ -334,21 +332,21 @@ export function Tracking({ token }: { token: string }) {
               <dt>Статус</dt>
               <dd>{label(o.status, "Обработва се")}</dd>
             </div>
-            <div>
-              <dt>Плащане</dt>
-              <dd>{label(o.payment_status, "Очаква плащане")}</dd>
-            </div>
-            <div>
-              <dt>Начин</dt>
-              <dd>
-                {o.payment_method === "card"
-                  ? "С карта при доставка"
-                  : "В брой при доставка"}
-              </dd>
-            </div>
+            {!o.test_only && (
+              <>
+                <div>
+                  <dt>Плащане</dt>
+                  <dd>{label(o.payment_status, "Очаква плащане")}</dd>
+                </div>
+                <div>
+                  <dt>Начин на плащане</dt>
+                  <dd>{o.payment_method === "card" ? "С карта при доставка" : "В брой при доставка"}</dd>
+                </div>
+              </>
+            )}
             {(d.day || d.date) && (
               <div>
-                <dt>Доставка</dt>
+                <dt>{o.test_only ? "Избран интервал" : "Доставка"}</dt>
                 <dd>
                   {shortDate(d.day || d.date, true)}
                   <br />

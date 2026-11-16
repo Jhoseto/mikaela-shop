@@ -22,7 +22,12 @@ export async function sendCommand(command: string, data: FormValues) {
   const result = await response.json().catch(() => ({}));
   if (!response.ok)
     throw new Error(result.error || "Промяната не е записана. Опитай отново.");
-  return result as { href?: string; message?: string };
+  return result as {
+    href?: string;
+    message?: string;
+    revision?: number;
+    version?: number;
+  };
 }
 
 export function CommandForm({

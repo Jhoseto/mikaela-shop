@@ -15,7 +15,7 @@ export type Article={
 export type Manifest={
   starts:string,ends:string,pages:string[],items:Article[],skipped:Record<string,unknown>[],coverUrl?:string,parserVersion:number
 }
-export const parserVersion=3
+export const parserVersion=5
 export function pythonExecutable() {
   if (process.env.BROCHURE_PYTHON) return process.env.BROCHURE_PYTHON
   const local=path.join(process.cwd(),".venv",process.platform==="win32"?"Scripts/python.exe":"bin/python")

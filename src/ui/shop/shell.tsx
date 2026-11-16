@@ -3,22 +3,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Panel } from "./panel";
+import { SearchBox } from "./search-box";
+import "./catalog-navigation.css";
 import {
   ArrowRight,
   Check,
-  ChevronDown,
   ChevronRight,
   Clock,
   Grid2X2,
   MapPin,
   Menu,
-  Search,
   ShoppingBasket,
   Store,
   Truck,
 } from "lucide-react";
 import { useBasket } from "./basket";
 import {
+  basketVariantLabel,
   infoPages,
   money,
   productHref,
@@ -52,26 +53,6 @@ export function ShopName({ settings }: { settings: ShopSettings }) {
     </Link>
   );
 }
-function SearchBox() {
-  return (
-    <form action="/tarsene" role="search" className="shop-search">
-      <Search size={20} aria-hidden="true" />
-      <label className="sr-only" htmlFor="site-search">
-        Търсене на продукти
-      </label>
-      <input
-        id="site-search"
-        type="search"
-        name="q"
-        placeholder="Потърси продукт или марка…"
-        maxLength={120}
-      />
-      <button aria-label="Търси">
-        <ArrowRight size={18} />
-      </button>
-    </form>
-  );
-}
 export function parseZones(raw: unknown): ShopZone[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((z) => ({
@@ -82,7 +63,11 @@ export function parseZones(raw: unknown): ShopZone[] {
     freeFrom: z.free_cents ?? null,
   }));
 }
-export function AreaChooser({ onChosen }: { onChosen?: () => void }) {
+export function AreaChooser({
+  onChosen,
+}: {
+  onChosen?: () => void;
+}) {
   const cart = useBasket();
   const [zones, setZones] = useState<ShopZone[] | null>(null),
     [selected, setSelected] = useState(cart.zone),
@@ -107,7 +92,6 @@ export function AreaChooser({ onChosen }: { onChosen?: () => void }) {
   const zone = zones?.find((z) => z.id === selected);
   return (
     <div className="zone-chooser">
-      <p>Провери дали доставяме до твоя район, преди да напълниш количката.</p>
       {error ? (
         <p role="alert">
           {error}{" "}
@@ -122,7 +106,7 @@ export function AreaChooser({ onChosen }: { onChosen?: () => void }) {
         <p role="status">Зареждане…</p>
       ) : !zones.length ? (
         <p className="shop-notice">
-          Магазинът все още подготвя районите за доставка.
+          В момента няма обслужвани райони.
         </p>
       ) : (
         <>
@@ -169,10 +153,6 @@ export function AreaChooser({ onChosen }: { onChosen?: () => void }) {
               </button>
             </>
           )}
-          <p className="muted fine">
-            Ако адресът ти е извън посочените райони, доставката все още не е
-            достъпна.
-          </p>
         </>
       )}
     </div>
@@ -182,6 +162,9 @@ export function Header({ settings }: { settings: ShopSettings }) {
   const [panel, setPanel] = useState<"cart" | "zone" | "nav" | null>(null);
   const path = usePathname(),
     cart = useBasket();
+  const catalogPage =
+    ["/produkti", "/promocii", "/tarsene"].includes(path) ||
+    path.startsWith("/kategorii/");
   useEffect(() => {
     setPanel(null);
   }, [path]);
@@ -191,20 +174,30 @@ export function Header({ settings }: { settings: ShopSettings }) {
       <a className="skip-link" href="#main-shop">
         Към основното съдържание
       </a>
-      <div className="shop-top">
+      <div className="shop-top primary-service-strip">
         <div className="shop-width">
-          <span>
-            <Truck size={15} />{" "}
-            {settings.demo ? "Демонстрационен магазин" : "Доставка до дома"}
+          <span className="delivery-deadline">
+            <Truck size={15} aria-hidden="true" />
+            Поръчки за доставка до офиса и дома се приемат до 20:00&nbsp;ч.
           </span>
-          <button onClick={() => setPanel("zone")}>
-            <MapPin size={14} /> Провери района за доставка{" "}
+          <button
+            onClick={() => setPanel("zone")}
+            aria-label="Провери района за доставка"
+          >
+            <MapPin size={14} />
+            <span className="region-desktop">Провери района за доставка</span>
+            <span className="region-mobile">Провери района</span>
             <ChevronRight size={13} />
           </button>
         </div>
       </div>
-      <header className="shop-header">
-        <div className="shop-width header-row">
+      <header className="shop-header primary-masthead">
+        <div
+          className={
+            "shop-width primary-header-row" +
+            (catalogPage ? " catalog-masthead" : "")
+          }
+        >
           <button
             className="icon-button mobile-nav"
             onClick={() => setPanel("nav")}
@@ -213,7 +206,27 @@ export function Header({ settings }: { settings: ShopSettings }) {
             <Menu />
           </button>
           <ShopName settings={settings} />
-          <SearchBox />
+          <nav className="primary-nav" aria-label="Основна навигация">
+            {navigation.map(([url, text], i) => {
+              const selected =
+                i === 0
+                  ? path === "/produkti" ||
+                    path.startsWith("/kategorii/") ||
+                    path.startsWith("/produkti/")
+                  : path === url;
+              return (
+                <Link
+                  key={url}
+                  href={url}
+                  aria-current={selected ? "page" : undefined}
+                >
+                  {i === 0 && <Grid2X2 size={16} aria-hidden="true" />}
+                  {text}
+                </Link>
+              );
+            })}
+          </nav>
+          {!catalogPage && <SearchBox key={path} />}
           <button className="basket-trigger" onClick={() => setPanel("cart")}>
             <ShoppingBasket size={23} />
             <span>
@@ -224,18 +237,6 @@ export function Header({ settings }: { settings: ShopSettings }) {
             <span className="sr-only"> артикула</span>
           </button>
         </div>
-        <nav className="shop-width shop-nav" aria-label="Основна навигация">
-          {navigation.map(([url, text], i) => (
-            <Link
-              key={url}
-              href={url}
-              className={path === url ? "current" : ""}
-            >
-              {i === 0 && <Grid2X2 size={17} />} {text}{" "}
-              {i === 0 && <ChevronDown size={13} />}
-            </Link>
-          ))}
-        </nav>
       </header>
       <button
         type="button"
@@ -268,9 +269,7 @@ export function Header({ settings }: { settings: ShopSettings }) {
                     <Link href={productHref(l.productSlug)} onClick={close}>
                       {l.title}
                     </Link>
-                    <small>
-                      {[l.variantName, l.pack].filter(Boolean).join(" · ")}
-                    </small>
+                    <small>{basketVariantLabel(l)}</small>
                     <Quantity
                       id={l.variantId}
                       qty={l.quantity}
@@ -333,9 +332,7 @@ export function Footer({ settings }: { settings: ShopSettings }) {
       <div className="shop-width footer-grid">
         <div>
           <ShopName settings={settings} />
-          <p>
-            <Store size={16} /> {settings.company || "Моят Магазин Микаела"}
-          </p>
+          {settings.company && <p><Store size={16} /> {settings.company}</p>}
           {settings.address && (
             <p>
               <MapPin size={16} />
@@ -360,7 +357,7 @@ export function Footer({ settings }: { settings: ShopSettings }) {
         <div>
           <h3>За магазина</h3>
           {Object.entries(infoPages)
-            .filter(([k]) => k !== "dostavka")
+            .filter(([k]) => !["dostavka", "kontakti"].includes(k))
             .map(([slug, title]) => (
               <Link href={"/informacia/" + slug} key={slug}>
                 {title}

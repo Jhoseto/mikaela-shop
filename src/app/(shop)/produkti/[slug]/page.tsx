@@ -31,7 +31,7 @@ export default async function ProductPage({ params }: { params: Params }) {
     root = origin(s);
   return (
     <>
-      {!s.demo && root && (
+      {!s.demo && !s.localBrochureOrdering && root && (
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -43,7 +43,7 @@ export default async function ProductPage({ params }: { params: Params }) {
               image: p.images.map((i) => new URL(i, root).href),
               brand: p.brand ? { "@type": "Brand", name: p.brand } : undefined,
               offers: p.variants
-                .filter((v) => v.price != null)
+                .filter((v) => !v.listingOnly && v.price != null)
                 .map((v) => ({
                   "@type": "Offer",
                   sku: v.id,
